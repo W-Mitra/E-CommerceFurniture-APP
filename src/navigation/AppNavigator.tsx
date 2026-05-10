@@ -139,10 +139,10 @@ function AdminTabs() {
   );
 }
 
-// ─── Root Navigator (single Stack — the correct RN pattern for auth flows) ────
+// ─── Root Navigator — always starts at Splash ─────────────────────────────────
 export default function AppNavigator() {
-  const { session, role, loading } = useAuth();
-  const { colors, isDark } = useTheme();
+  const { session } = useAuth();
+  const { colors } = useTheme();
   const { loadPersistentData } = useFurnitureStore();
 
   useEffect(() => {
@@ -151,37 +151,28 @@ export default function AppNavigator() {
     }
   }, [session]);
 
-  if (loading) {
-    return (
-      <View style={[styles.loadingScreen, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'none' }}>
-      {!session ? (
-        // ── Unauthenticated screens ──────────────────────────────────────────
-        <>
-          <Stack.Screen name="Splash" component={SplashScreen} />
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="SignUp" component={SignUpScreen} />
-        </>
-      ) : role === 'admin' ? (
-        // ── Admin screens ────────────────────────────────────────────────────
-        <>
-          <Stack.Screen name="AdminMain" component={AdminTabs} />
-        </>
-      ) : (
-        // ── User screens ─────────────────────────────────────────────────────
-        <>
-          <Stack.Screen name="UserMain" component={UserTabs} />
-          <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
-          <Stack.Screen name="Checkout" component={CheckoutScreen} />
-        </>
-      )}
+    // All screens live in a single flat stack.
+    // SplashScreen handles the routing decision after checking the session.
+    <Stack.Navigator
+      initialRouteName="Splash"
+      screenOptions={{ headerShown: false, animation: 'none' }}
+    >
+      {/* ── Entry ─────────────────────────────────────────────── */}
+      <Stack.Screen name="Splash" component={SplashScreen} />
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+
+      {/* ── Auth ──────────────────────────────────────────────── */}
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="SignUp" component={SignUpScreen} />
+
+      {/* ── User App ──────────────────────────────────────────── */}
+      <Stack.Screen name="UserMain" component={UserTabs} />
+      <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen} />
+
+      {/* ── Admin App ─────────────────────────────────────────── */}
+      <Stack.Screen name="AdminMain" component={AdminTabs} />
     </Stack.Navigator>
   );
 }
