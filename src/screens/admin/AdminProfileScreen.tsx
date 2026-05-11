@@ -60,6 +60,7 @@ export default function AdminProfileScreen({ navigation }: any) {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
+        base64: true, // Request base64 for reliable mobile uploads
       });
 
       if (!result.canceled) {
@@ -67,7 +68,8 @@ export default function AdminProfileScreen({ navigation }: any) {
           setTempImage(result.assets[0].uri);
           setCropperVisible(true);
         } else {
-          uploadAvatar(result.assets[0].uri);
+          // Pass both URI and Base64
+          uploadAvatar(result.assets[0].uri, result.assets[0].base64);
         }
       }
     } catch (error) {
@@ -75,16 +77,32 @@ export default function AdminProfileScreen({ navigation }: any) {
     }
   };
 
-  const uploadAvatar = async (uri: string) => {
+  const uploadAvatar = async (uri: string, base64?: string | null) => {
     try {
       setUploading(true);
       const filename = `${user?.id}-${Date.now()}.jpg`;
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      
+      let uploadBody: any;
+      
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        uploadBody = await response.blob();
+      } else if (base64) {
+        // Use base64 conversion for mobile - very reliable
+        const { decode } = require('base64-arraybuffer');
+        uploadBody = decode(base64);
+      } else {
+        // Fallback to fetch blob if no base64
+        const response = await fetch(uri);
+        uploadBody = await response.blob();
+      }
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filename, blob);
+        .upload(filename, uploadBody, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
 
       if (uploadError) throw uploadError;
 
@@ -99,10 +117,19 @@ export default function AdminProfileScreen({ navigation }: any) {
 
       if (updateError) throw updateError;
       
+      // Log the activity
+      await adminService.logActivity(user?.id || '', 'UPDATE_PROFILE_IMAGE', {
+        user_id: user?.id,
+        email: user?.email,
+        type: 'admin_profile',
+        new_url: publicUrl
+      });
+      
       await refreshProfile();
       Alert.alert('Success', 'Profile picture updated!');
     } catch (error: any) {
-      Alert.alert('Upload Error', error.message);
+      console.error('Upload Error:', error);
+      Alert.alert('Upload Error', error.message || 'Check your internet connection');
     } finally {
       setUploading(false);
     }
@@ -256,7 +283,7 @@ export default function AdminProfileScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 120, // Added space for custom tab bar
     maxWidth: 500,
     width: '100%',
     alignSelf: 'center',

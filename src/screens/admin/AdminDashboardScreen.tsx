@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 13, marginTop: 2 },
   headerRight: { flexDirection: 'row', gap: 10 },
   iconBtn: { padding: 10, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { padding: 20, paddingBottom: 100 },
+  scroll: { padding: 20, paddingBottom: 120 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 16 },
   statCard: { 
     flex: 1,

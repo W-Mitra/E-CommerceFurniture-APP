@@ -1,40 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { supabase } from '../lib/supabase';
 
 export default function SplashScreen({ navigation }: any) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Fade in animation
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 1200,
       useNativeDriver: true,
     }).start();
 
-    // After splash delay, check session and route accordingly
-    const timer = setTimeout(async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        // No session → show onboarding/login flow
-        navigation.replace('Onboarding');
-        return;
-      }
-
-      // Session exists → check role and go to correct home
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single();
-
-      if (profile?.role === 'admin' || session.user.email === 'wendelynmitra900@gmail.com') {
-        navigation.replace('AdminMain');
-      } else {
-        navigation.replace('UserMain');
-      }
+    const timer = setTimeout(() => {
+      navigation.replace('Onboarding');
     }, 2500);
 
     return () => clearTimeout(timer);

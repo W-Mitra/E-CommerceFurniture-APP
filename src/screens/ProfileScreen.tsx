@@ -8,12 +8,14 @@ import {
   User, Mail, Phone, MapPin, Heart, ShoppingBag,
   Settings, LogOut, ChevronRight, ChevronLeft, Moon, Shield, Bell,
   CreditCard, Package, HelpCircle, LayoutDashboard,
-  Clock, ClipboardList, Check, X, Truck
+  Clock, ClipboardList, Check, X, Truck, Camera
 } from 'lucide-react-native';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
+import { adminService } from '../services/adminService';
 import * as ImagePicker from 'expo-image-picker';
+import ImageCropperModal from '../components/ImageCropperModal';
 
 const { width } = Dimensions.get('window');
 
@@ -25,6 +27,9 @@ export default function ProfileScreen({ navigation, route }: any) {
   const [isOrderModalVisible, setIsOrderModalVisible] = useState(false);
   const [newFullName, setNewFullName] = React.useState(profile?.full_name || '');
   const [newAvatar, setNewAvatar] = React.useState(profile?.avatar_url || '');
+  const [avatarBase64, setAvatarBase64] = React.useState<string | null>(null);
+  const [cropperVisible, setCropperVisible] = React.useState(false);
+  const [tempImage, setTempImage] = React.useState('');
   const [newPhone, setNewPhone] = React.useState(profile?.phone || '');
   const [newAddress, setNewAddress] = React.useState(profile?.address || '');
   const [saving, setSaving] = React.useState(false);
@@ -134,29 +139,52 @@ export default function ProfileScreen({ navigation, route }: any) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.3, // Lower quality for faster uploads
+      quality: 0.3, 
+      base64: true,
     });
 
     if (!result.canceled) {
-      setNewAvatar(result.assets[0].uri);
+      if (Platform.OS === 'web') {
+        setTempImage(result.assets[0].uri);
+        setCropperVisible(true);
+      } else {
+        setNewAvatar(result.assets[0].uri);
+        setAvatarBase64(result.assets[0].base64 || null);
+      }
     }
   };
 
-  const uploadImage = async (uri: string) => {
+  const handleCropComplete = (croppedBase64: string) => {
+    setCropperVisible(false);
+    setNewAvatar(croppedBase64);
+    // On web, the croppedBase64 is a dataURL which includes the base64 part
+    const base64Part = croppedBase64.split(',')[1] || croppedBase64;
+    setAvatarBase64(base64Part);
+  };
+
+  const uploadImage = async (uri: string, base64?: string | null) => {
     try {
       // If it's already a web URL, don't re-upload
       if (uri.startsWith('http')) return uri;
 
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
-
       const fileName = `${user?.id}-${Date.now()}.jpg`;
       const filePath = `avatars/${fileName}`;
 
+      let uploadBody: any;
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        uploadBody = await response.blob();
+      } else if (base64) {
+        const { decode } = require('base64-arraybuffer');
+        uploadBody = decode(base64);
+      } else {
+        const response = await fetch(uri);
+        uploadBody = await response.blob();
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, arrayBuffer, {
+        .upload(filePath, uploadBody, {
           contentType: 'image/jpeg',
           upsert: true
         });
@@ -181,7 +209,7 @@ export default function ProfileScreen({ navigation, route }: any) {
       // Upload image first if it's a local URI
       let finalAvatarUrl = newAvatar;
       if (newAvatar && !newAvatar.startsWith('http')) {
-        finalAvatarUrl = await uploadImage(newAvatar);
+        finalAvatarUrl = await uploadImage(newAvatar, avatarBase64);
       }
 
       const { error } = await supabase
@@ -195,6 +223,17 @@ export default function ProfileScreen({ navigation, route }: any) {
         .eq('id', user?.id);
 
       if (error) throw error;
+
+      // Log if picture was changed
+      if (newAvatar && !newAvatar.startsWith('http')) {
+        await adminService.logActivity(user?.id || '', 'UPDATE_PROFILE_IMAGE', {
+          user_id: user?.id,
+          email: user?.email,
+          type: 'user_profile',
+          new_url: finalAvatarUrl
+        });
+      }
+
       await refreshProfile();
       setIsEditing(false);
       Alert.alert('Success', 'Profile updated successfully!');
@@ -255,10 +294,18 @@ export default function ProfileScreen({ navigation, route }: any) {
 
           {/* Profile Header */}
           <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Image
-              source={{ uri: profile?.avatar_url || `https://ui-avatars.com/api/?name=${profile?.full_name || user?.email}&background=6366f1&color=fff` }}
-              style={styles.avatar}
-            />
+            <View style={styles.avatarContainer}>
+              <Image
+                source={{ uri: newAvatar || profile?.avatar_url || `https://ui-avatars.com/api/?name=${profile?.full_name || user?.email}&background=6366f1&color=fff` }}
+                style={styles.avatar}
+              />
+              <TouchableOpacity 
+                style={[styles.cameraBtn, { backgroundColor: colors.primary }]} 
+                onPress={pickImage}
+              >
+                <Camera size={14} color="white" />
+              </TouchableOpacity>
+            </View>
             <View style={styles.profileInfo}>
               <Text style={[styles.profileName, { color: colors.text }]}>{profile?.full_name || 'Furniture Lover'}</Text>
               <Text style={[styles.profileEmail, { color: colors.textMuted }]}>{user?.email}</Text>
@@ -631,6 +678,15 @@ export default function ProfileScreen({ navigation, route }: any) {
           </View>
         </View>
       </Modal>
+      {/* Web Cropper Modal */}
+      {Platform.OS === 'web' && (
+        <ImageCropperModal
+          visible={cropperVisible}
+          image={tempImage}
+          onClose={() => setCropperVisible(false)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </LinearGradient>
   );
 }
@@ -639,6 +695,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: {
     padding: 20,
+    paddingBottom: 120, // Added space for custom tab bar
     maxWidth: 500,
     width: '100%',
     alignSelf: 'center',
@@ -669,6 +726,24 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   avatar: { width: 80, height: 80, borderRadius: 40 },
+  avatarContainer: { position: 'relative' },
+  cameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
   profileInfo: { marginLeft: 16, flex: 1 },
   profileName: { fontSize: 18, fontWeight: 'bold' },
   profileEmail: { fontSize: 14, marginTop: 2 },
